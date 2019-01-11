@@ -7,7 +7,7 @@ from scipy import signal
 from scipy.signal import lfilter
 from scipy import integrate
 v_21cm = 1420.405751#MHz
-d_max = 13.5 #MeerKAT single dish baseline i.e dish diameter - in metres
+d_max = 50 #Single dish baseline in metres i.e dish diameter for single-dish IM
 c = 3e8 #speed of light
 
 numberofzbins = 24
@@ -19,28 +19,15 @@ zbincentres = zbins+(zbins[1]-zbins[0])/2
 zbincentres = zbincentres[:len(zbincentres)-1] #remove last value since this is outside of bins
 vmin = v_21cm*1e6 / (1+zbincentres[-1]) #Minimum frequency in Hz for highest redshift bin
 beamsize = np.degrees( 1.22*c / (vmin*d_max) ) #Maximum beamsize in degrees for IM survey
-
+print('Beamsize = %s deg'%beamsize)
 nside = 128
 pixsize = hp.nside2resol(nside) #in radians
 pixarea = np.degrees(pixsize)**2 #approximate pix area in sq.degrees
-print(pixarea)
 lpix = int( np.pi / pixsize ) + 1 #maximum scale of l to probe
 
 n_g_orig = np.load('HealpyMaps/n_g-MICE.npy')
 dT_HI_orig = np.load('HealpyMaps/dT_HI-MICE.npy')
 skymask = np.load('HealpyMaps/skymask-MICE.npy') #used for excluding area of sky not covered by MICE
-
-print('here')
-
-n_g = np.copy(n_g_orig)
-n_g[np.logical_not(skymask)] = np.nan #exclude pixels outside sky coverage
-delta_g = (n_g - np.nanmean(n_g)) / np.nanmean(n_g)
-delta_g[np.logical_not(skymask)] = hp.UNSEEN #exclude pixels outside sky coverage
-dT_HI_orig[12][np.logical_not(skymask)] = hp.UNSEEN
-
-Cl_HH_orig = hp.anafast(dT_HI_orig[12],lmax=lpix) #Auto power spec
-Cl_gH_orig = hp.anafast(dT_HI_orig[12],delta_g,lmax=lpix)
-
 
 #Smooth IM maps to emulate beam effects. Use constant beamsize from maximum redshift bin
 #    since constant smoothing is needed for foreground removal and mitigates effect of polarization leakage:
@@ -49,31 +36,14 @@ for i in range(numberofzbins):
     dT_HI_orig[i] = hp.smoothing(dT_HI_orig[i], fwhm=np.radians(beamsize),verbose=False,lmax=4*nside)
 skymask = hp.reorder(skymask,inp='RING',out='NESTED') #put into nested so can select nested areas
 
-
-Cl_HH = hp.anafast(dT_HI_orig[12],lmax=lpix) #Auto power spec
-Cl_gH = hp.anafast(dT_HI_orig[12],delta_g,lmax=lpix)
-l = np.arange(1,lpix+2)
-plt.figure(figsize=(10,8))
-plt.plot(l,Cl_gH_orig,label='$C_{gH}$', color='orange')
-plt.plot(l,Cl_gH,label='$C_{gH}$', color='orange',linestyle='--')
-plt.plot(l,Cl_HH_orig,label='$C_{HH}$', color='blue')
-plt.plot(l,Cl_HH,label='$C_{HH}$', color='blue',linestyle='--')
-plt.xlabel('$\ell$',fontsize=16)
-plt.ylabel('$C_\ell$',fontsize=16)
-plt.xscale('log')
-plt.yscale('log')
-plt.legend(fontsize=16)
-plt.show()
-exit()
-
 def b_HI(z):
-    return 0.67 + 0.18*z + 0.05*z**2 #Obtained from Alkistis see emails - in Alkistis' paper: https://arxiv.org/pdf/1709.07316.pdf
+    return 0.67 + 0.18*z + 0.05*z**2 #From SKA red book or Alkistis' paper: https://arxiv.org/pdf/1709.07316.pdf
 def b_g(z):
-    return 1 + 0.84*z #Obtained from D.Alonso clustering-z paper section B 2nd Para
+    return 1 + 0.84*z #From LSST Science Book
 
 def CorrelationFunction(C_l,lmin,lmax):
     '''
-    Weighted correlation function following Menard
+    Weighted correlation function following Menard with power law weighting
     '''
     l = np.arange(1,len(C_l)+1)
     lmask = (l>lmin) & (l<lmax)
@@ -101,29 +71,18 @@ def dNdzEstimator():
             plt.show()
 
         #Set scales to probe for correlation function measurements:
-        #lcen = int( np.pi / np.radians(beamsize) )
-        #lmax = lcen*2
-        lmax = 150
+        lmax = int( np.pi / np.radians(beamsize) )
         lmin = 50
-        #lmin = 2*lcen - 20
-        #lmax = 2*lcen + 20
-        #lmax = 2*int( np.pi / np.radians(beamsize) )
-        #lmin = int(lmax/2)
+        if lmin>lmax: lmin = int(lmax*2)
         Cl_HH = hp.anafast(dT_HI[i],lmax=lpix) #Auto power spec
         wHH.append( CorrelationFunction(Cl_HH,lmin,lmax) )
         Cl_gH = hp.anafast(dT_HI[i],delta_g,lmax=lpix)
-        #Do a scipy noise reduction on power spectrum
-        n = 50  # the larger n is, the smoother curve will be
-        b = [1.0 / n] * n
-        a = 1
-        Cl_gH_noise = lfilter(b,a,np.abs(Cl_gH)) #noise reduced Cl (of absoulute values)
         #'''
         if i==12:
             l = np.arange(1,lpix+2)
             plt.figure(figsize=(10,8))
             plt.plot(l,Cl_gH,label='$C_{gH}$', color='orange')
             plt.plot(l,Cl_HH,label='$C_{HH}$', color='blue')
-            #plt.plot(l,Cl_gH_noise, color='red')
             plt.plot([lmin,lmin],[np.min(Cl_gH),np.max(Cl_HH)],color='grey',linestyle='--')
             plt.plot([lmax,lmax],[np.min(Cl_gH),np.max(Cl_HH)],color='grey',linestyle='--')
             plt.xlabel('$\ell$',fontsize=16)
@@ -134,10 +93,7 @@ def dNdzEstimator():
             plt.show()
             #exit()
         #'''
-
-        #wgH.append( CorrelationFunction(Cl_gH_noise,lmin,lmax) )
         wgH.append( CorrelationFunction(Cl_gH,lmin,lmax) )
-
         wgHwHH.append( wgH[i] / wHH[i] )
     wgHwHH = np.array(wgHwHH)
     return 1/deltaz * wgHwHH * bHbg * Tbar
@@ -176,8 +132,8 @@ bHbg = b_HI(zbincentres)/b_g(zbincentres)
 #Loop over different
 dNdz_est = []
 #Area = [100, 1000, 5000, 10000] #sq deg
-Area = [1000, 2000, 6000] #sq deg
-#Area = [6000]
+#Area = [1000, 2000, 6000] #sq deg
+Area = [6000]
 for i in range(len(Area)):
     dT_HI = np.copy(dT_HI_orig)
     numberofpix = int(Area[i] / pixarea)
