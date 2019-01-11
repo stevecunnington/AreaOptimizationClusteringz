@@ -61,15 +61,8 @@ def dNdzEstimator():
     delta_g = (n_g - np.nanmean(n_g)) / np.nanmean(n_g)
     wgHwHH=[]; wgH=[]; wHH=[]
     for i in range(numberofzbins):
-        print(i)
         dT_HI[i][np.logical_not(AreaMask)] = hp.UNSEEN ## exclude pixels outside sky coverage
         delta_g[np.logical_not(AreaMask)] = hp.UNSEEN #    (set to zero so not to ruin healpy Cl)
-
-        if i==8:
-            hp.mollview(dT_HI[i],xsize=2000)
-            hp.mollview(delta_g,xsize=2000)
-            plt.show()
-
         #Set scales to probe for correlation function measurements:
         lmax = int( np.pi / np.radians(beamsize) )
         lmin = 50
@@ -77,8 +70,7 @@ def dNdzEstimator():
         Cl_HH = hp.anafast(dT_HI[i],lmax=lpix) #Auto power spec
         wHH.append( CorrelationFunction(Cl_HH,lmin,lmax) )
         Cl_gH = hp.anafast(dT_HI[i],delta_g,lmax=lpix)
-        #'''
-        if i==12:
+        if i==-1: #use for power spec viewing
             l = np.arange(1,lpix+2)
             plt.figure(figsize=(10,8))
             plt.plot(l,Cl_gH,label='$C_{gH}$', color='orange')
@@ -92,7 +84,6 @@ def dNdzEstimator():
             plt.legend(fontsize=16)
             plt.show()
             #exit()
-        #'''
         wgH.append( CorrelationFunction(Cl_gH,lmin,lmax) )
         wgHwHH.append( wgH[i] / wHH[i] )
     wgHwHH = np.array(wgHwHH)
@@ -128,28 +119,18 @@ def b_g(z):
 Tbar = 0.0559 + 0.2324*zbincentres - 0.024*zbincentres**2 #Model for Tbar from SKA RedBook
 bHbg = b_HI(zbincentres)/b_g(zbincentres)
 
-
-#Loop over different
+#Loop over different survey areas to compare constraints on dNdz prediction
 dNdz_est = []
-#Area = [100, 1000, 5000, 10000] #sq deg
-#Area = [1000, 2000, 6000] #sq deg
-Area = [6000]
+Area = [1000, 2000, 5000] #sq deg
 for i in range(len(Area)):
+    print('Survey Area %s'%(i+1),'of',str(len(Area)))
     dT_HI = np.copy(dT_HI_orig)
     numberofpix = int(Area[i] / pixarea)
-    print(numberofpix)
     AreaMask = np.zeros(hp.nside2npix(nside))
-
     maskedindices = np.where(skymask)[0]
     AreaMask[maskedindices[:numberofpix]] = 1
     AreaMask = np.ma.make_mask(AreaMask)
     AreaMask = hp.reorder(AreaMask,inp='NESTED',out='RING')
-    '''
-    dT_HI[12][np.logical_not(AreaMask)] = hp.UNSEEN ## exclude pixels outside sky coverage
-    hp.mollview(dT_HI[12],xsize=2000)
-    plt.show()
-    exit()
-    '''
     #Add Gaussian Noise (different for each sky area):
     for j in range(numberofzbins):
         dT_noise =  ReceiverNoise(zbins[j],zbins[j+1],Area[i],beamsize)
@@ -158,9 +139,10 @@ for i in range(len(Area)):
 
 dNdz_true = np.load('HealpyMaps/dNdz_true-MICE.npy') #MICE
 
-plt.plot(zbincentres, dNdz_true, linestyle='--', color='black')
+plt.plot(zbincentres, dNdz_true, linestyle='--', color='black', label='True-$z$')
 for i in range(len(Area)):
-    print(dNdz_est[i])
     plt.plot(zbincentres, dNdz_est[i]/np.sum(dNdz_est[i] * deltaz),label='%s deg$^2$'%Area[i])
+plt.xlabel('Redshift')
+plt.ylabel('d$N$/d$z$')
 plt.legend()
 plt.show()
