@@ -25,9 +25,9 @@ pixsize = hp.nside2resol(nside) #in radians
 pixarea = np.degrees(pixsize)**2 #approximate pix area in sq.degrees
 lpix = int( np.pi / pixsize ) + 1 #maximum scale of l to probe
 
-n_g_orig = np.load('HealpyMaps/n_g-MICE.npy')
-dT_HI_orig = np.load('HealpyMaps/dT_HI-MICE.npy')
-skymask = np.load('HealpyMaps/skymask-MICE.npy') #used for excluding area of sky not covered by MICE
+n_g_orig = np.load('HealpyMaps/n_g_nside%s-MICE.npy'%nside)
+dT_HI_orig = np.load('HealpyMaps/dT_HI_nside%s-MICE.npy'%nside)
+skymask = np.load('HealpyMaps/skymask_nside%s-MICE.npy'%nside) #used for excluding area of sky not covered by MICE
 
 #Smooth IM maps to emulate beam effects. Use constant beamsize from maximum redshift bin
 #    since constant smoothing is needed for foreground removal and mitigates effect of polarization leakage:
