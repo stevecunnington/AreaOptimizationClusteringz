@@ -7,12 +7,12 @@ from scipy import signal
 from scipy.signal import lfilter
 from scipy import integrate
 v_21cm = 1420.405751#MHz
-d_max = 50 #Single dish baseline in metres i.e dish diameter for single-dish IM
+d_max = 13.5 #Single dish baseline in metres i.e dish diameter for single-dish IM
 c = 3e8 #speed of light
 
 numberofzbins = 24
-zmin = 0.2
-zmax = 1.4
+zmin = 0
+zmax = 0.48
 deltaz = (zmax-zmin)/numberofzbins
 zbins = np.linspace(zmin,zmax,numberofzbins+1)
 zbincentres = zbins+(zbins[1]-zbins[0])/2
@@ -25,9 +25,9 @@ pixsize = hp.nside2resol(nside) #in radians
 pixarea = np.degrees(pixsize)**2 #approximate pix area in sq.degrees
 lpix = int( np.pi / pixsize ) + 1 #maximum scale of l to probe
 
-n_g_orig = np.load('HealpyMaps/n_g_nside%s-MICE.npy'%nside)
-dT_HI_orig = np.load('HealpyMaps/dT_HI_nside%s-MICE.npy'%nside)
-skymask = np.load('HealpyMaps/skymask_nside%s-MICE.npy'%nside) #used for excluding area of sky not covered by MICE
+n_g_orig = np.load('HealpyMaps/n_g_nside%s-GAEA.npy'%nside)
+dT_HI_orig = np.load('HealpyMaps/dT_HI_nside%s-GAEA.npy'%nside)
+skymask = np.load('HealpyMaps/skymask_nside%s-GAEA.npy'%nside) #used for excluding area of sky not covered by MICE
 
 #Smooth IM maps to emulate beam effects. Use constant beamsize from maximum redshift bin
 #    since constant smoothing is needed for foreground removal and mitigates effect of polarization leakage:
@@ -121,7 +121,8 @@ bHbg = b_HI(zbincentres)/b_g(zbincentres)
 
 #Loop over different survey areas to compare constraints on dNdz prediction
 dNdz_est = []
-Area = [1000, 2000, 5000] #sq deg
+Area = [1000, 5000, 10000] #sq deg
+
 for i in range(len(Area)):
     print('Survey Area %s'%(i+1),'of',str(len(Area)))
     dT_HI = np.copy(dT_HI_orig)
@@ -137,7 +138,7 @@ for i in range(len(Area)):
         dT_HI[j] = dT_HI[j] + dT_noise
     dNdz_est.append( dNdzEstimator() )
 
-dNdz_true = np.load('HealpyMaps/dNdz_true-MICE.npy') #MICE
+dNdz_true = np.load('HealpyMaps/dNdz_true-GAEA.npy') #GAEA true optical reddshift distribution
 
 plt.plot(zbincentres, dNdz_true, linestyle='--', color='black', label='True-$z$')
 for i in range(len(Area)):
