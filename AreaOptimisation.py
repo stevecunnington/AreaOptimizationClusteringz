@@ -1,3 +1,9 @@
+'''
+Optimisation study for using clustering-based redshift estimation using MeerKAT-like
+intensity maps to predict a population of optical galaxies redshift distribution.
+Looks at examining how much area and observation time would be needed for a successful
+N(z) prediction.
+'''
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,6 +34,7 @@ lpix = int( np.pi / pixsize ) + 1 #maximum scale of l to probe
 n_g_orig = np.load('HealpyMaps/n_g_nside%s-GAEA.npy'%nside)
 dT_HI_orig = np.load('HealpyMaps/dT_HI_nside%s-GAEA.npy'%nside)
 skymask = np.load('HealpyMaps/skymask_nside%s-GAEA.npy'%nside) #used for excluding area of sky not covered by MICE
+dNdz_true = np.load('HealpyMaps/dNdz_true-GAEA.npy') #GAEA true optical reddshift distribution
 
 #Smooth IM maps to emulate beam effects. Use constant beamsize from maximum redshift bin
 #    since constant smoothing is needed for foreground removal and mitigates effect of polarization leakage:
@@ -65,6 +72,7 @@ def dNdzEstimator():
         delta_g[np.logical_not(AreaMask)] = hp.UNSEEN #    (set to zero so not to ruin healpy Cl)
         #Set scales to probe for correlation function measurements:
         lmax = int( np.pi / np.radians(beamsize) )
+
         lmin = 50
         if lmin>lmax: lmin = int(lmax*2)
         Cl_HH = hp.anafast(dT_HI[i],lmax=lpix) #Auto power spec
@@ -89,9 +97,10 @@ def dNdzEstimator():
     wgHwHH = np.array(wgHwHH)
     return 1/deltaz * wgHwHH * bHbg * Tbar
 
-def ReceiverNoise(zmin,zmax,Area,beamsize):
+def ReceiverNoise(zmin,zmax,Area,beamsize,t_obs):
     '''
-    Returns noise map as a function of redshift bin edges and area surveyed in sq.deg
+    Returns noise map as a function of redshift bin edges, area surveyed in sq.deg
+    and observation time (t_obs) in hours.
     '''
     vmax = v_21cm / (1+zmin) #MHz
     vmin = v_21cm / (1+zmax) #MHz
@@ -105,7 +114,7 @@ def ReceiverNoise(zmin,zmax,Area,beamsize):
     T_sys = (T_rcvr + T_sky) * 1e3 #convert to mK for consistancy with rest of sims
     f_sky = Area/41253 #~41253sq.deg in whole sky - so this gives fraction
     N_dish = 64 #MeerKAT has 64 dishes
-    t_obs = 10000 *60*60 #10,000 hours - converted to secs - SKA1
+    t_obs = t_obs *60*60 #converted to secs
     Omega_beam = 1.133 * np.radians(beamsize)**2
     sigma_N = T_sys * np.sqrt( 4*np.pi * f_sky / (deltav * t_obs * N_dish * Omega_beam) )
     dT_noise = np.random.normal( 0, sigma_N, hp.nside2npix(nside) )
@@ -120,29 +129,39 @@ Tbar = 0.0559 + 0.2324*zbincentres - 0.024*zbincentres**2 #Model for Tbar from S
 bHbg = b_HI(zbincentres)/b_g(zbincentres)
 
 #Loop over different survey areas to compare constraints on dNdz prediction
-dNdz_est = []
-Area = [1000, 5000, 10000] #sq deg
+t_obs = [10, 100, 1000, 10000] #Chose what observing times (hrs) to test
+Area = [500,2000,5000] #Choose what areas (sq.deg) to test
+for t in range(len(t_obs)):
+    print('----Observing Time %s'%(t+1),'of',str(len(t_obs)))
+    dNdz_est = []
+    FoM = []
+    for A in range(len(Area)):
+        print('Survey Area %s'%(A+1),'of',str(len(Area)))
+        dT_HI = np.copy(dT_HI_orig)
+        numberofpix = int(Area[A] / pixarea)
+        AreaMask = np.zeros(hp.nside2npix(nside))
+        maskedindices = np.where(skymask)[0]
+        AreaMask[maskedindices[:numberofpix]] = 1
+        AreaMask = np.ma.make_mask(AreaMask)
+        AreaMask = hp.reorder(AreaMask,inp='NESTED',out='RING')
+        #Add Gaussian Noise (different for each sky area):
+        for i in range(numberofzbins):
+            dT_noise =  ReceiverNoise(zbins[i],zbins[i+1],Area[A],beamsize,t_obs[t])
+            dT_HI[i] = dT_HI[i] + dT_noise
+        dNdz_est.append( dNdzEstimator() )
+        FoM.append( np.mean( np.abs(dNdz_true - dNdz_est[A]/np.sum(dNdz_est[A] * deltaz)) / dNdz_true ) )#Signal to Noise
+    plt.plot(Area, FoM, label='$t_{obs}=%s $hrs'%t_obs[t])
+plt.xlabel('Survey Area (Sq.Degrees)')
+plt.ylabel('$\\frac{|N(z)_{true} - N(z)_{est}|}{N(z)_{true}}$',fontsize=20)
+plt.legend()
+plt.subplots_adjust(left=0.15)
+plt.show()
 
-for i in range(len(Area)):
-    print('Survey Area %s'%(i+1),'of',str(len(Area)))
-    dT_HI = np.copy(dT_HI_orig)
-    numberofpix = int(Area[i] / pixarea)
-    AreaMask = np.zeros(hp.nside2npix(nside))
-    maskedindices = np.where(skymask)[0]
-    AreaMask[maskedindices[:numberofpix]] = 1
-    AreaMask = np.ma.make_mask(AreaMask)
-    AreaMask = hp.reorder(AreaMask,inp='NESTED',out='RING')
-    #Add Gaussian Noise (different for each sky area):
-    for j in range(numberofzbins):
-        dT_noise =  ReceiverNoise(zbins[j],zbins[j+1],Area[i],beamsize)
-        dT_HI[j] = dT_HI[j] + dT_noise
-    dNdz_est.append( dNdzEstimator() )
-
-dNdz_true = np.load('HealpyMaps/dNdz_true-GAEA.npy') #GAEA true optical reddshift distribution
-
+#Run dNdz estimation plot for last chosen t_obs:
 plt.plot(zbincentres, dNdz_true, linestyle='--', color='black', label='True-$z$')
-for i in range(len(Area)):
-    plt.plot(zbincentres, dNdz_est[i]/np.sum(dNdz_est[i] * deltaz),label='%s deg$^2$'%Area[i])
+for A in range(len(Area)):
+    plt.plot(zbincentres, dNdz_est[A]/np.sum(dNdz_est[A] * deltaz),label='%s deg$^2$'%Area[A])
+plt.title('With $t_{obs} = %s$hrs'%t_obs[-1])
 plt.xlabel('Redshift')
 plt.ylabel('d$N$/d$z$')
 plt.legend()
