@@ -12,6 +12,8 @@ import scipy
 from scipy import signal
 from scipy.signal import lfilter
 from scipy import integrate
+from FASTICAclean import *
+from GMCAclean import *
 v_21cm = 1420.405751#MHz
 d_max = 13.5 #Single dish baseline in metres i.e dish diameter for single-dish IM
 c = 3e8 #speed of light
@@ -33,6 +35,8 @@ lpix = int( np.pi / pixsize ) + 1 #maximum scale of l to probe
 
 n_g_orig = np.load('HealpyMaps/n_g_nside%s-GAEA.npy'%nside)
 dT_HI_orig = np.load('HealpyMaps/dT_HI_nside%s-GAEA.npy'%nside)
+dT_FG = np.load('HealpyMaps/dT_FG_nside%s-GAEA.npy'%nside)
+dT_obs = dT_FG + dT_HI_orig
 skymask = np.load('HealpyMaps/skymask_nside%s-GAEA.npy'%nside) #used for excluding area of sky not covered by MICE
 dNdz_true = np.load('HealpyMaps/dNdz_true-GAEA.npy') #GAEA true optical reddshift distribution
 
@@ -41,6 +45,20 @@ dNdz_true = np.load('HealpyMaps/dNdz_true-GAEA.npy') #GAEA true optical reddshif
 for i in range(numberofzbins):
     dT_HI_orig[i][np.logical_not(skymask)] = hp.UNSEEN
     dT_HI_orig[i] = hp.smoothing(dT_HI_orig[i], fwhm=np.radians(beamsize),verbose=False,lmax=4*nside)
+    dT_obs[i][np.logical_not(skymask)] = hp.UNSEEN
+    dT_obs[i] = hp.smoothing(dT_HI_orig[i], fwhm=np.radians(beamsize),verbose=False,lmax=4*nside)
+
+#Run Foregrounds Clean - either FASTICA or GMCA:
+dT_HI_clean = FASTICAclean(dT_obs, skymask, N_IC=4)
+#dT_HI_clean = GMCAclean(dT_obs, N_IC=4)
+
+dT_HI_fullmap = dT_HI_clean
+
+hp.mollview(dT_HI_orig[10])
+hp.mollview(dT_HI_clean[10])
+plt.show()
+exit()
+
 skymask = hp.reorder(skymask,inp='RING',out='NESTED') #put into nested so can select nested areas
 
 def b_HI(z):
@@ -137,7 +155,7 @@ for t in range(len(t_obs)):
     FoM = []
     for A in range(len(Area)):
         print('Survey Area %s'%(A+1),'of',str(len(Area)))
-        dT_HI = np.copy(dT_HI_orig)
+        dT_HI = np.copy(dT_HI_fullmap)
         numberofpix = int(Area[A] / pixarea)
         AreaMask = np.zeros(hp.nside2npix(nside))
         maskedindices = np.where(skymask)[0]
